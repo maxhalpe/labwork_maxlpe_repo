@@ -1,0 +1,472 @@
+---
+title: "Lab 3"
+#author: "Maximilian Halperin"
+date: "Math 241, Week 4"
+output:
+  pdf_document
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+# Do not modify this chunk.
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Put all necessary libraries here
+library(tidyverse)
+library(reprex)
+library(dplyr)
+library(infer)
+library(moderndive)
+library(lubridate)
+library(ggthemes)
+library(ggplot2)
+```
+
+
+
+## Due: Thursday, February 25th at ~~8:30am~~ 6:00pm
+
+## Goals of this lab
+
+1. Practice using GitHub.
+1. Practice wrangling data.
+
+
+## Data Notes:
+
+* For Problem 2, we will continue to dig into the SE Portland crash data but will use two datasets:
+    + `CRASH`: crash level data
+    + `PARTIC`: participant level data
+
+
+```{r}
+# Crash level dataset
+crash <- read_csv("/home/courses/math241s21/Data/pdx_crash_2018_CRASH.csv")
+
+# Participant level dataset
+partic <- read_csv("/home/courses/math241s21/Data/pdx_crash_2018_PARTIC.csv")
+```
+
+* For Problem 3, we will look at chronic illness data from the [CDC](https://www.cdc.gov/cdi/index.html) along with the regional mapping for each state.
+
+
+```{r}
+# CDC data
+CDC <- read_csv("/home/courses/math241s21/Data/CDC2.csv")
+
+# Regional data
+USregions <- read_csv("/home/courses/math241s21/Data/USregions.csv")
+```
+
+* For Problem 4, we will use polling data from [FiveThirtyEight.com](https://projects.fivethirtyeight.com/congress-generic-ballot-polls/).
+
+
+```{r}
+# Note I only want us to focus on a subset of the variables
+polls <- read_csv("/home/courses/math241s21/Data/generic_topline.csv") %>%
+  select(subgroup, modeldate, dem_estimate, rep_estimate)
+```
+
+* For Problem 6, we will use several datasets that came from `pdxTrees` but good messed up a bit:
+
+```{r}
+# Data on trees in a few parks in Portland
+treez <- read_csv("/home/courses/math241s21/Data/treez.csv")
+treez_loc <- read_csv("/home/courses/math241s21/Data/treez_loc.csv")
+treez_park <- read_csv("/home/courses/math241s21/Data/treez_park.csv")
+```
+
+
+
+## Problems
+
+
+### Problem 1: Git Control
+
+In this problem, we will practice interacting with GitHub on the site directly and from the RStudio Server.  Do this practice on **your labwork_username repo**, not your group's Project 1 repo, so that the graders can check your progress with Git.
+
+
+a. Let's practice creating and closing **Issues**.  In a nutshell, **Issues** let us keep track of our work. Within your repo on GitHub.com, create an Issue entitled "Complete Lab 3".  Once Lab 3 is done, close the **Issue**.  (If you want to learn more about the functionalities of Issues, check out this [page](https://guides.github.com/features/issues/).)
+
+
+b. Edit the ReadMe of your repo to include your name and a quick summary of the purpose of the repo.  You can edit from within GitHub directly or on the server.  If you edit on the server, make sure to push your changes to GitHub.
+
+c. Upload both your Lab 3 .Rmd and .pdf to your repo on GitHub.
+
+
+### Problem 2: `dplyr` madness
+
+Each part of this problem will require you to wrangle the data and then do one or both of the following:
+
++ Display the wrangled data frame.  To ensure it displays the whole data frame, you can pipe `as.data.frame()` at the end of the wrangling.
++ Answer a question(s).
+
+**Some parts will require you to do a data join but won't tell you that.**
+
+
+
+a. Produce a data frame that provides the frequency of the different collision types, ordered from most to least common.  What type is most common? What type is least common?
+
+```{r}
+#CRASH_TYP_CD
+crash_freq <- crash %>%
+  count(COLLIS_TYP_SHORT_DESC) %>%
+  arrange(desc(n))
+crash_freq
+```
+Most common are rear, turn, and angle collisions. Least common are head, back, and parking collisions.
+
+b.  For the three most common collision types, create a table that contains:
+    + The frequencies of each collision type and weather condition combination.
+    + The proportion of each collision type by weather condition.
+    
+Arrange the table by weather and within type, most to least common collision type.  
+
+
+```{r}
+
+crashweather <- crash %>%
+  select(COLLIS_TYP_SHORT_DESC, WTHR_COND_SHORT_DESC) %>%
+  filter(COLLIS_TYP_SHORT_DESC %in% c("REAR", "TURN", "ANGL")) %>%
+  count(COLLIS_TYP_SHORT_DESC, WTHR_COND_SHORT_DESC)
+
+propcrash <- crashweather %>%
+  group_by(WTHR_COND_SHORT_DESC) %>%
+  mutate(propcrfreqweather = n/sum(n)) %>%
+  arrange(WTHR_COND_SHORT_DESC, desc(propcrfreqweather))
+
+propcrash
+```
+
+
+c. Create a column for whether or not a crash happened on a weekday or on the weekend and then create a data frame that explores if the distribution of collision types varies by whether or not the crash happened during the week or the weekend.
+
+```{r}
+weekendcrash <- crash %>%
+  select(COLLIS_TYP_SHORT_DESC, CRASH_WK_DAY_CD) %>%
+  mutate(date = case_when(
+    CRASH_WK_DAY_CD %in% c(1,7) ~ "weekend",
+     CRASH_WK_DAY_CD %in% c(2:6) ~ "weekday"))
+
+weekend_dist <- count(weekendcrash, date, COLLIS_TYP_SHORT_DESC, sort = TRUE) %>%
+  group_by(date) %>%
+  mutate(prop = n/sum(n)) %>%
+  arrange(COLLIS_TYP_SHORT_DESC, desc(n)) %>%
+  as.data.frame()
+
+weekend_dist
+```
+
+
+d.  First determine what proportion of crashes involve pedestrians.  Then, for each driver license status, determine what proportion of crashes involve pedestrians.  What driver license status has the highest rate of crashes that involve pedestrians?
+
+```{r}
+
+ped <- crash %>%
+  select(COLLIS_TYP_SHORT_DESC, CRASH_ID)
+
+drive <- partic %>%
+  select(DRVR_LIC_STAT_SHORT_DESC, CRASH_ID)
+
+crash_ped <- full_join(ped, drive, by = c("CRASH_ID" = "CRASH_ID")) %>%
+  distinct(CRASH_ID, .keep_all = TRUE) %>%
+  mutate(pedest = case_when(COLLIS_TYP_SHORT_DESC == "PED" ~ "Involved",
+                            COLLIS_TYP_SHORT_DESC != "PED" ~ "Not involved"))
+
+crash_ped_overlap <- full_join(ped, drive, by = c("CRASH_ID" = "CRASH_ID")) %>%
+  mutate(pedest = case_when(
+    COLLIS_TYP_SHORT_DESC == "PED" ~ "Involved",
+    COLLIS_TYP_SHORT_DESC != "PED" ~ "Not involved")
+    )
+crash_ped %>%
+    group_by(pedest) %>%
+    summarize(count = n()) %>%
+    mutate(proportion = count/sum(count))
+  
+crash_ped %>% 
+  group_by(DRVR_LIC_STAT_SHORT_DESC, pedest)%>%
+  distinct(CRASH_ID) %>%
+  summarize(count = n()) %>%
+  mutate(prop = count/sum(count)) %>%
+  arrange(pedest, desc(prop)) %>%
+  as.data.frame
+
+```
+Drivers with a license type ORY have the highest rates of crashes involving pedestrians.
+
+
+e. Create a data frame that contains the age of drivers and collision type. (Don't print it.)  Complete the following:
+    + Find the average and median age of drivers.
+    + Find the average and median age of drivers by collision type.
+    + Create a graph of driver ages.
+    + Create a graph of driver ages by collision type.
+
+```{r}
+mergedcrash <- full_join(partic, crash, by = c("CRASH_ID" = "CRASH_ID"))
+
+mergedcrash %>%
+  mutate(AGE_VAL = as.numeric(AGE_VAL)) %>%
+  filter(AGE_VAL != 0) %>%
+  summarize(avgage = mean(AGE_VAL, na.rm = T),
+            median = median(AGE_VAL, na.rm = T))
+
+mergedcrash %>%
+  mutate(AGE_VAL = as.numeric(AGE_VAL)) %>%
+  filter(AGE_VAL != 0) %>%
+  ggplot(aes(x = AGE_VAL)) + geom_bar() +
+  labs(x = "Driver ages",
+       y = "Amount of Incidents")
+
+mergedcrash %>%
+  mutate(AGE_VAL = as.numeric(AGE_VAL)) %>%
+  filter(AGE_VAL != 0) %>%
+  group_by(COLLIS_TYP_SHORT_DESC) %>%
+  summarize(avgage = mean(AGE_VAL, na.rm = T),
+            median = median(AGE_VAL, na.rm = T)) %>%
+  ggplot(aes(x = COLLIS_TYP_SHORT_DESC, y = avgage )) + 
+  geom_col() +
+  labs(x = "Collision Type",
+       y = "Driver ages")
+
+```
+
+Draw some conclusions.
+
+Mean age is 38.1 median is 36 for all drivers. 
+The first graph shows a cluster around 25 and shows that there is a wide range in age of drivers.
+The second graph shows the average age of people involved in specific types of collisions.
+
+### Problem 3: Chronically Messy Data
+
+a. Turning to the CDC data, let's get a handle of what is represented there.  For 2016 (use `YearStart`), how many distinct topics were tracked?
+
+```{r}
+  unique(CDC$Topic)
+```
+17 distinct topics were tracked 
+
+b. Let's study influenza vaccination patterns! Create a dataset that contains the age adjusted prevalence of the "Influenza vaccination among noninstitutionalized adults aged >= 18 years" for Oregon and the US from 2010 to 2016.  
+```{r}
+flupat <- CDC %>%
+  select(Question, DataValueType, YearStart, LocationAbbr, Topic, DataValue) %>%
+  filter(Question == "Influenza vaccination among noninstitutionalized adults aged >= 18 years",
+         DataValueType == "Age-adjusted Prevalence",
+         YearStart %in% c(2010: 2016),
+         LocationAbbr %in% c("OR", "US"),
+         Topic == "Immunization"
+         )
+flupat
+```
+
+
+c. Create a graph comparing the immunization rates of Oregon and the US.  Comment on the observed trends in your graph
+
+```{r}
+ggplot(flupat, aes(
+  x = YearStart, 
+  y = DataValue, 
+  color = LocationAbbr)) + 
+  geom_point() + 
+  geom_line()
+```
+Both Oregon and the wider United States experienced an increase in vaccinations until 2016 where there was a decrease.
+
+d.  Let's see how immunization rates vary by region of the country. Join the regional dataset to our CDC dataset so that we have a column signifying the region of the country.  
+```{r}
+totalimm <- left_join(CDC, USregions, by = c("LocationDesc" = "State"))
+
+totalimm
+
+```
+
+
+e. Why are there NAs in the region column of the new dataset?
+
+There are NAs because some places such as the entirety of US, district of columbia, or puerto rico are not technically regions of the United States.
+
+f. Create a dataset that contains the age adjusted influenza immunization rates in 2016 for each state in the country and sort it by highest immunization to lowest.  Which state has the highest immunization? 
+
+```{r}
+
+flurate2016 <- totalimm %>%
+  select(DataValueType, YearStart, Topic, DataValue, LocationAbbr) %>%
+  filter(DataValueType == "Age-adjusted Prevalence",
+         YearStart == 2016 ,
+         Topic == "Immunization"
+         ) %>%
+  arrange(desc(DataValue))
+
+flurate2016
+```
+South Dakota has the highest immunization rate.
+
+g. Construct a graphic of the 2016 influenza immunization rates by region of the country.  Don't include locations without a region. Comment on your graphic.
+
+```{r}
+totalimm %>%
+  filter(DataValueType == "Age-adjusted Prevalence",
+         Question == "Influenza vaccination among noninstitutionalized adults aged >= 18 years") %>%
+  group_by(Region) %>%
+  drop_na(Region) %>%
+ ggplot(mapping = aes(x = Region, y = DataValue)) + 
+  geom_boxplot() +
+  labs(x = "Region",
+       y = "Vaccination rate")
+
+```
+My graphic uses boxplots to show the mean and median of immunization rates per region. It is able to show the variation in each regino and the audience can quickly compare means and medians.
+
+
+### Problem 4: Tidying Data Like a Boss
+
+I was amazed by the fact that many of the FiveThirtyEight datasets are actually not in a perfectly *tidy* format.  Let's tidy up this dataset related to [polling](https://projects.fivethirtyeight.com/congress-generic-ballot-polls/).  
+
+
+
+a. Why is this data not currently in a tidy format?  (Consider the three rules of tidy data!)
+
+```{r}
+polls
+```
+
+For data to be considered tidy: each variable must have it's own column, each observation has its own row, and each value must have its own cell. 
+
+In the polls dataset dem_estimate and rep_estimate are made up of two variables. These two variables should have different columns for the dataset to be tidy.
+
+b. Create a tidy dataset of the `All polls` subgroup.
+
+
+```{r}
+all_polls <- polls %>%
+  filter(subgroup == "All polls") %>%
+  pivot_longer(cols = c(dem_estimate, rep_estimate),
+               names_to = "Party",
+               values_to = "Estimate")
+```
+
+
+c. Now let's create a new untidy version of `polls`.  Focusing just on the estimates for democrats, create a data frame where each row represents a subgroup (given in column 1) and the rest of the columns are the estimates for democrats by date.
+
+```{r}
+untidypolls <- polls %>% 
+  select(-rep_estimate) %>%
+  pivot_wider(names_from = modeldate,
+              values_from = dem_estimate)
+```
+
+
+d. Why might someone want to transform the data like we did in part c? 
+
+Someone may use different software to use and analyze the data. This may require the data to be structured differently.
+
+### Problem 5: YOUR TURN!
+
+Now it is your turn.  Pick one (or multiple) of the datasets used on this lab.  Ask a question of the data.  Do some data wrangling to produce statistics (use at least two wrangling verbs) and a graphic to answer the question.  Then comment on any conclusions you can draw about your question.
+
+```{r, eval = TRUE}
+
+whole <- left_join(CDC, USregions, by = c("LocationDesc" = "State"))
+
+whole <- whole %>%
+  select(Question, DataValueType, YearStart, LocationAbbr, Topic, DataValue) %>%
+  filter(Question %in% c("Binge drinking prevalence among adults aged >= 18 years", 
+                         "Recent mentally unhealthy days among adults aged >= 18 years"),
+         DataValueType %in% c("Age-adjusted Prevalence", "Mean"),
+         YearStart %in% c(2010: 2016),
+         LocationAbbr %in% c("OR", "US"),
+         Topic %in% c("Mental Health", "Alcohol")
+         )
+
+whole %>% 
+  filter(Topic == "Alcohol") %>%
+  ggplot(aes(x = YearStart, y = DataValue, color = LocationAbbr)) + 
+  geom_point() + 
+  geom_line()
+
+whole %>% 
+  filter(Topic == "Mental Health") %>%
+  ggplot(aes(x = YearStart, y = DataValue, color = LocationAbbr)) + 
+  geom_point() + 
+  geom_line()
+
+```
+Question: what are the trends of mental health and alcohol consumption from the years 2010-2016?
+We can observe that from the years 2011-2016 there has been a decline in alcohol consumption in the United States but and increase in the state of Oregon. As for mental health there has been an increase in people experiencing more depressive symptoms while in the United States there has little to no change in people experiencing mental hardship.
+
+### Problem 6: Channeling your Inner Marie Kondo
+
+In this problem, I am going to ask you to wrangle/clean up some data and then compare your "cleaned data" with a peer to see how your final versions differ.
+
+
+a. Join `treez`, `treez_park`, and `treez_loc` to create one data frame where:
+
+* Each row represents one tree (and there are no duplicates) from the following parks: Mt Tabor Park, Laurelhurst Park, Columbia Park
+* All missing values (including suspicious values) are appropriately coded as `NA`.
+* Each variable has a suitable `class`.
+* Categories of categorical variables are appropriated encoded.
+* And, any other cleaning is done.
+
+It might take a little sleuthing to figure out which variables are your keys and what makes these datasets messy.
+
+```{r}
+glimpse(treez_park)
+glimpse(treez)
+glimpse(treez_loc)
+
+join_t1 <- treez_loc %>%
+  select(IDUser, Latitude, Longitude) %>%
+  rename(UserID = IDUser) %>%
+  right_join(treez)
+
+join_t <- treez_park %>%
+  filter(Park %in% c("Mt Tabor Park", "Laurelhurst Park", "Columbia Park")) %>%
+  right_join(join_t1) %>%
+  distinct(UserID, .keep_all = TRUE)
+
+```
+
+
+
+b. Export your dataset to a csv file using `write_csv()`.
+
+```{r, eval = FALSE}
+# I recommend leaving in eval = FALSE
+write_csv(join_t, file = "halp_tree.csv")
+
+```
+
+c. Find a classmate (maybe a project group member?) and share your cleaned datasets with each other.  Save their data on RStudio and import it in the R chunk below.  Also, state who you shared data with.  (Feel free to share your data with multiple people but you only need to load one classmate's dataset.)
+
+I shared my data with the slack and I used Lauren's dataset.
+
+```{r}
+# Import their dataset
+larabey_trees <- read_csv("~/Math241/larabey_trees.csv")
+glimpse(larabey_trees)
+nrow(larabey_trees)
+nrow(join_t)
+
+ncol(larabey_trees)
+ncol(join_t)
+setequal(larabey_trees, join_t)
+
+unique(larabey_trees$Park)
+unique(join_t$Park)
+```
+
+d. Compare your dataset and their dataset.  In your comparison, answer the following questions:
+
+* Do your datasets have the same number of rows?  Same number of columns?  
+* Use `setequal()` to determine if they are exactly the same.
+* How are they different?
+
+Our data sets have the same number of rows (3898) and columns (12). We differ on the amount of parks we included.
+
+e. A goal of this exercise with to experience both the **subjectivity** and **iterative nature** of data cleaning.  Any time we clean data, we are making choices and often we don't catch all the bugs in our data the first (or second time around).  
+
+Based on your explorations of a classmate's cleaned dataset, do you think your dataset needs further wrangling?  If not, justify.  If so, do that now.
+
+My dataset could not be further wrangled, we ended up with similar datasets with exception that I did not include one park.  
+
