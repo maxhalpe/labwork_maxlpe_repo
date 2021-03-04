@@ -88,11 +88,11 @@ snow_se_pdx <- ncdc(datasetid = "GHCND", datatypeid = "SNOW",
                       stationid = "GHCND:US1ORMT0006",
                       limit = 1000)
 
-#2021-01-01
-
 ```
 
 d.  What is the class of `precip_se_dpx` and `snow_se_pdx`?  Grab the data frame nested in each and create a new dataset called `se_pdx_data` which combines the data from both data frames using `bind_rows()`. Write the file to a CSV.
+
+Both `precip_se_dpx` and `snow_se_pdx` are ncdc_data. 
 
 ```{r, eval = FALSE}
 # Leave eval = FALSE
@@ -107,29 +107,28 @@ write_csv(se_pdx_data, "se_pdx_data.csv")
 # Read the file in here!
 com_se_pdx_data <- read_csv("se_pdx_data.csv")
 
-#com_se_pdx_data %>% 
- # mutate(date = ymd_hms(date))
 ```
 
 
 e. Use `ymd_hms()` in the package `lubridate` to wrangle the date column into the correct format.
 ```{r}
-clean_sepdx_data <- ymd_hms(se_pdx_data$date)
+clean_sepdx_data <- ymd_hms(com_se_pdx_data$date)
                             
-                            #tz = "UTC",
-                            #locale = Sys.getlocale("LC_TIME"),
-                            #truncated = 0)
+#omitted from this problems set
+
 clean_sepdx_data
 ```
 
 
 
 f. Plot the precipitation and snowfall data for this site in Portland over time.  Comment on any trends.
+There is a lot of rain towards the end of the month. The amount of snow and rain overlap with each other.
 
 ```{r}
-
 com_se_pdx_data %>%
-  ggplot(aes(x = date, y = value, color = datatype)) + geom_line()
+  ggplot(aes(x = date, y = value, color = datatype)) + 
+  geom_line() + 
+  labs(x = "Month in 2021", y = "Amount of Snow/Rain")
 
 ```
 
@@ -149,22 +148,7 @@ Once you have grabbed the data,
 
 ### API Wrapper Suggestions for Problem 2
 
-Here are some potential API wrapper packages.  Feel free to use one not included in this list for Problem 2.
 
-
-* [spotifyr](https://www.rcharlie.com/spotifyr/)
-* [ieugwasr](https://mrcieu.github.io/ieugwasr/index.html)
-* [VancouvR](https://mountainmath.github.io/VancouvR/index.html)
-* [traveltime](https://tlorusso.github.io/traveltime/vignette.html)
-* [nbastatR](https://github.com/abresler/nbastatR)
-* [eia](https://docs.ropensci.org/eia/)
-* [tradestatistics](https://docs.ropensci.org/tradestatistics/)
-* [fbicrime](https://github.com/SUN-Wenjun/fbicrime)
-* [wbstats](https://github.com/nset-ornl/wbstats)
-* [rtweet](https://docs.ropensci.org/rtweet/)
-* [`rfishbase`](https://github.com/ropensci/rfishbase)
-* [`darksky`](https://github.com/hrbrmstr/darksky)
-* And so many more on [this page](https://github.com/ropensci/opendata) under the heading: Web-based Open Data
 
 ```{r}
 remotes::install_github("ropensci/rfishbase")
@@ -191,9 +175,8 @@ ggplot(sal_fishbase, aes(x = PriceCateg, y = Length)) +
     x = "Price Category",
     y = "Fish Length (cm)"
   )
-
 ```
-
+The median for each price category varies with length of salmon.
 
 
 
@@ -248,14 +231,13 @@ R1_table <- R1_table %>%
   mutate(pct = parse_number(X2)) %>%
   mutate(occupation = reorder(X1, pct))
 
-
 R1_table %>%
   ggplot(mapping = aes(x = occupation, y = pct)) + 
   geom_col() + 
   labs(x = "Occupation", y = "Percentage Reedies") +
   coord_flip()
 ```
-Many Reedies pursue industry and further education after Reed.
+Many Reedies pursue industry and education after Reed. Seems that not many Reedies pursue arts & communication or community service after graduation.
 
 e. Let's now grab the Reed graduation rates over time.  Grab the data from [here](https://www.reed.edu/ir/gradrateshist.html).
 Do the following to clean up the data:
@@ -274,7 +256,7 @@ grad_rate_table <- html_table(rate_table[[1]], fill = TRUE)
 
 * Rename the column names.  
 
-```{r,eval = FALSE}
+```{r,eval = TRUE}
 
 colnames(grad_rate_table) <- c("Year", "Cohort_size", "gradfour", "gradfive", "gradsix")
 
@@ -282,9 +264,9 @@ colnames(grad_rate_table) <- c("Year", "Cohort_size", "gradfour", "gradfive", "g
 
 * Remove any extraneous rows.
 
-```{r, eval = FALSE}
+```{r, eval = TRUE}
 # Hint
-grad_rate_table <- grad_rate_table %>%
+grad_rate_table1 <- grad_rate_table %>%
   slice(-1)
 ```
 
@@ -297,22 +279,20 @@ grad_rate_table <- grad_rate_table %>%
 * Make sure each column has the correct class.    
 
 ```{r}
-
 gradratetable <- grad_rate_table %>%
-  mutate(Grad_year = as.numeric(Year)) %>%
-  mutate(cohort = parse_number(Cohort_size)) %>%
-  mutate(four = parse_number(gradfour)) %>%
-  mutate(five = parse_number(gradfive)) %>%
-  mutate(six = parse_number(gradsix)) %>%
-  select(Grad_year, cohort, four, five, six)
-
+  mutate(Grad_year = as.numeric(Year),
+         cohort = parse_number(Cohort_size),
+         four = parse_number(gradfour),
+         five = parse_number(gradfive),
+         six = parse_number(gradsix)
+         ) %>%
+  dplyr::select(Grad_year, cohort, four, five, six)
 ```
 
 
 f. Create a graph comparing the graduation rates over time and draw some conclusions.
 
 ```{r}
-
 grad_rate_table_final <- pivot_longer(gradratetable, cols = c(four, five, six),
                                 names_to = "Years to Graduate", 
                                 values_to = "Graduation Rate") %>%
@@ -322,11 +302,12 @@ head(grad_rate_table)
 
 ggplot(grad_rate_table_final, aes(fill = `Years to Graduate`, y = `Graduation Rate`, x = Grad_year)) + 
   geom_bar(stat = "identity") + 
-  facet_grid(. ~ `Years to Graduate`) + 
-  theme_classic()
+  facet_grid(. ~ `Years to Graduate`) +
+  theme_bw() +
+  labs(x = "Graduation Year")
 
 ```
-The graduation rate has improved over time for all categories.
+The graduation rate has improved over time for people graduating in four, five, and six years.
 
 ## Problem 4: Scraping the Wild We(b)st
 
@@ -343,14 +324,13 @@ Notes:
 2. On some websites, how the data are stored is very messy.  If you are struggling to determine the correct CSS, try a new page.
 3. [SelectorGadget](https://cran.r-project.org/web/packages/rvest/vignettes/selectorgadget.html) (a Chrome Add-on) can be a helpful tool for determining the CSS selector.
 
+
+Conclusions: The United States is producing the most amount of refined oil followed by Russia and the United Arab Emirates. Additionally, the viewer can see that there are many OPEC countries.
 ```{r}
  oil_scraping <- read_html("https://en.wikipedia.org/wiki/List_of_countries_by_oil_production") %>%
   html_nodes("table")
 
 oil_scraping <- html_table(oil_scraping[[1]], fill = TRUE)
-
-#oil_scraping_table <- class(oil_scraping[[1]])
-  #html_table(oil_scraping[[1]], fill = TRUE)
 
 oil_csv <- write.csv(oil_scraping, "oil_scraping.csv")
 
@@ -359,14 +339,15 @@ oil_csv1 <- read_csv("oil_scraping.csv")
 oil_csv2 <- oil_csv1 %>%
   rename(
     oilprod = `Oil production2019 (bbl/day)[1]`
-  )
+  ) %>%
+  filter(oilprod > 1000000,
+         Country != "World")
 
-oil_csv %>%
-  ggplot(mapping = aes(x = reorder(Country x = Country, y = Oil_pr)) + 
+oil_csv2 %>%
+  ggplot(mapping = aes(x = Country, y = oilprod)) + 
            geom_bar(stat = "identity") +
            theme_bw() + 
-           labs(title = "Oil export by country", x = "Country", y = "") +
-           theme(axis.text.x = element_text(angle = 90)) 
-
+           labs(title = "Oil export by country", x = "Country", y = "Barrels per Day(bbl/day)") +
+  coord_flip()
 ```
 
