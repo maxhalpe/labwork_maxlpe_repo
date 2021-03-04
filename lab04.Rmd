@@ -1,0 +1,372 @@
+---
+title: "Lab 4"
+#author: "Maximilian Halperin"
+date: "Math 241, Week 5"
+output:
+  pdf_document
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+# Do not modify this chunk.
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+```
+
+```{r}
+# Put all necessary libraries here
+library(tidyverse)
+library(rnoaa)
+library(rvest)
+library(httr)
+library(lubridate)
+library(devtools)
+```
+
+
+
+## Due: Thursday, March 4th at 8:30am
+
+## Goals of this lab
+
+1. Practice grabbing data from the internet.
+1. Learn to navigate new R packages.
+1. Grab data from an API (either directly or using an API wrapper).
+1. Scrape data from the web.
+
+
+## Problem 1: Predicting the (usually) predictable: Portland Weather
+
+In this problem let's get comfortable with extracting data from the National Oceanic and Atmospheric Administration's (NOAA) API via the R API wrapper package `rnoaa`.
+
+You can find more information about the datasets and variables [here](https://www.ncdc.noaa.gov/homr/reports).
+
+```{r}
+# Don't forget to install it first!
+library(rnoaa)
+```
+
+a. First things first, go to [this NOAA website](https://www.ncdc.noaa.gov/cdo-web/token) to get a key emailed to you.  Then insert your key below:
+
+```{r, eval = TRUE}
+# Then change eval to TRUE!
+options(noaakey = "aGYuXQPNVgiIDSWMDagjrxqmmPieXldN")
+```
+
+
+
+b. From the National Climate Data Center (NCDC) data, use the following code to grab the stations in Multnomah County. How many stations are in Multnomah County?
+
+```{r, eval = TRUE}
+# Change to eval = TRUE when have your API key stored!
+stations <- ncdc_stations(datasetid = "GHCND", 
+                          locationid = "FIPS:41051")
+
+mult_stations <- stations$data
+```
+
+
+
+c. For 2021, grab the precipitation data and the snowfall data for site `GHCND:US1ORMT0006`.  Leave in `eval = FALSE` as we are going to write the data to a csv in the next part. 
+
+```{r, eval = FALSE}
+# First fill-in and run to following to determine the
+# datatypeid
+ncdc_datatypes(datasetid = "GHCND",
+               stationid = "GHCND:US1ORMT0006")
+
+# Now grab the data using ncdc()
+precip_se_pdx <- ncdc(datasetid = "GHCND", datatypeid = "PRCP",
+                      startdate = "2021-01-01",
+                      enddate = "2021-02-25",
+                      stationid = "GHCND:US1ORMT0006",
+                      limit = 1000)
+
+snow_se_pdx <- ncdc(datasetid = "GHCND", datatypeid = "SNOW",
+                      startdate = "2021-01-01",
+                      enddate = "2021-02-25",
+                      stationid = "GHCND:US1ORMT0006",
+                      limit = 1000)
+
+#2021-01-01
+
+```
+
+d.  What is the class of `precip_se_dpx` and `snow_se_pdx`?  Grab the data frame nested in each and create a new dataset called `se_pdx_data` which combines the data from both data frames using `bind_rows()`. Write the file to a CSV.
+
+```{r, eval = FALSE}
+# Leave eval = FALSE
+se_pdx_data <- bind_rows(precip_se_pdx$data, snow_se_pdx$data)
+
+stringr::str_replace(se_pdx_data$date, "T"," ")
+  
+write_csv(se_pdx_data, "se_pdx_data.csv")
+```
+
+```{r}
+# Read the file in here!
+com_se_pdx_data <- read_csv("se_pdx_data.csv")
+
+#com_se_pdx_data %>% 
+ # mutate(date = ymd_hms(date))
+```
+
+
+e. Use `ymd_hms()` in the package `lubridate` to wrangle the date column into the correct format.
+```{r}
+clean_sepdx_data <- ymd_hms(se_pdx_data$date)
+                            
+                            #tz = "UTC",
+                            #locale = Sys.getlocale("LC_TIME"),
+                            #truncated = 0)
+clean_sepdx_data
+```
+
+
+
+f. Plot the precipitation and snowfall data for this site in Portland over time.  Comment on any trends.
+
+```{r}
+
+com_se_pdx_data %>%
+  ggplot(aes(x = date, y = value, color = datatype)) + geom_line()
+
+```
+
+
+
+
+## Problem 2: From API to R 
+
+For this problem I want you to grab web data by either talking to an API directly with `httr` or using an API wrapper.  It must be an API that we have NOT used in class yet.
+
+Once you have grabbed the data, 
+
+* Write the data to a csv file.  
+* Make sure the code to grab the data and write the csv is in an `eval = FALSE` r chunk.
+* In an `eval = TRUE` r chunk, do any necessary wrangling to graph it and/or produce some relevant/interesting/useful summary statistics. 
+* Draw some conclusions from your graph and summary statistics.
+
+### API Wrapper Suggestions for Problem 2
+
+Here are some potential API wrapper packages.  Feel free to use one not included in this list for Problem 2.
+
+
+* [spotifyr](https://www.rcharlie.com/spotifyr/)
+* [ieugwasr](https://mrcieu.github.io/ieugwasr/index.html)
+* [VancouvR](https://mountainmath.github.io/VancouvR/index.html)
+* [traveltime](https://tlorusso.github.io/traveltime/vignette.html)
+* [nbastatR](https://github.com/abresler/nbastatR)
+* [eia](https://docs.ropensci.org/eia/)
+* [tradestatistics](https://docs.ropensci.org/tradestatistics/)
+* [fbicrime](https://github.com/SUN-Wenjun/fbicrime)
+* [wbstats](https://github.com/nset-ornl/wbstats)
+* [rtweet](https://docs.ropensci.org/rtweet/)
+* [`rfishbase`](https://github.com/ropensci/rfishbase)
+* [`darksky`](https://github.com/hrbrmstr/darksky)
+* And so many more on [this page](https://github.com/ropensci/opendata) under the heading: Web-based Open Data
+
+```{r}
+remotes::install_github("ropensci/rfishbase")
+library("rfishbase")
+
+salmon <- common_to_sci("salmon")
+salmon
+
+sal <- species(salmon$Species, fields = c("Species",
+                                          "PriceCateg",
+                                          "Weight",
+                                          "Length"))
+
+sal_fishbase <- write_csv(sal, "sal_fishbase.csv")
+sal_fishbase <- read_csv("sal_fishbase.csv")
+
+sal_fishbase <- sal_fishbase %>%
+  mutate(price = fct_relevel(PriceCateg, levels = c("low", "medium","high")))
+
+ggplot(sal_fishbase, aes(x = PriceCateg, y = Length)) +
+  geom_boxplot() +
+  labs(title = "Salmon Price Category vs. Length") +
+  labs(
+    x = "Price Category",
+    y = "Fish Length (cm)"
+  )
+
+```
+
+
+
+
+## Problem 3: Scraping Reedie Data
+
+Let's see what lovely data we can pull from Reed's own website.  
+
+a. Go to [https://www.reed.edu/ir/success.html](https://www.reed.edu/ir/success.html) and scrap the two tables.  But first check whether or not the website allows scraping.
+
+```{r}
+
+url <- "https://www.reed.edu/ir/success.html"
+
+robotstxt::paths_allowed(url)
+
+tables <- url %>%
+  read_html() %>%
+  html_nodes(css = "table")
+
+R1_table <- html_table(tables[[1]], fill = TRUE)
+R1_table
+
+R2_table <- html_table(tables[[2]], fill = TRUE)
+R2_table
+
+```
+
+
+b. Grab and print out the table that is entitled "GRADUATE SCHOOLS MOST FREQUENTLY ATTENDED BY REED ALUMNI".  Why is this data frame not in a tidy format?
+
+```{r}
+R2_table <- html_table(tables[[2]], fill = TRUE)
+R2_table
+```
+Each row should correspond to one observation but there are many observations for each row.
+
+c. Wrangle the data into a tidy format.
+
+```{r}
+R2_table_tidy <- R2_table %>%
+  pivot_longer(c(MBAs, JDs, PhDs, MDs), names_to = "TypeDegree", values_to = "Name of School")
+
+R2_table_tidy
+```
+
+
+d. Now grab the "OCCUPATIONAL DISTRIBUTION OF ALUMNI" table and turn it into an appropriate graph.  What conclusions can we draw from the graph?
+
+```{r}
+# Hint: Use `parse_number()` within `mutate()` to fix one of the columns
+R1_table <- R1_table %>% 
+  mutate(pct = parse_number(X2)) %>%
+  mutate(occupation = reorder(X1, pct))
+
+
+R1_table %>%
+  ggplot(mapping = aes(x = occupation, y = pct)) + 
+  geom_col() + 
+  labs(x = "Occupation", y = "Percentage Reedies") +
+  coord_flip()
+```
+Many Reedies pursue industry and further education after Reed.
+
+e. Let's now grab the Reed graduation rates over time.  Grab the data from [here](https://www.reed.edu/ir/gradrateshist.html).
+Do the following to clean up the data:
+
+```{r}
+# Hint
+grad_rate <- "https://www.reed.edu/ir/gradrateshist.html"
+
+rate_table <- grad_rate %>%
+  read_html() %>%
+  html_nodes(css = "table")
+
+grad_rate_table <- html_table(rate_table[[1]], fill = TRUE)
+```
+
+
+* Rename the column names.  
+
+```{r,eval = FALSE}
+
+colnames(grad_rate_table) <- c("Year", "Cohort_size", "gradfour", "gradfive", "gradsix")
+
+```
+
+* Remove any extraneous rows.
+
+```{r, eval = FALSE}
+# Hint
+grad_rate_table <- grad_rate_table %>%
+  slice(-1)
+```
+
+* Reshape the data so that there are columns for 
+    + Entering class year
+    + Cohort size
+    + Years to graduation
+    + Graduation rate
+
+* Make sure each column has the correct class.    
+
+```{r}
+
+gradratetable <- grad_rate_table %>%
+  mutate(Grad_year = as.numeric(Year)) %>%
+  mutate(cohort = parse_number(Cohort_size)) %>%
+  mutate(four = parse_number(gradfour)) %>%
+  mutate(five = parse_number(gradfive)) %>%
+  mutate(six = parse_number(gradsix)) %>%
+  select(Grad_year, cohort, four, five, six)
+
+```
+
+
+f. Create a graph comparing the graduation rates over time and draw some conclusions.
+
+```{r}
+
+grad_rate_table_final <- pivot_longer(gradratetable, cols = c(four, five, six),
+                                names_to = "Years to Graduate", 
+                                values_to = "Graduation Rate") %>%
+  select(Grad_year, cohort, `Years to Graduate`, `Graduation Rate`) 
+
+head(grad_rate_table)
+
+ggplot(grad_rate_table_final, aes(fill = `Years to Graduate`, y = `Graduation Rate`, x = Grad_year)) + 
+  geom_bar(stat = "identity") + 
+  facet_grid(. ~ `Years to Graduate`) + 
+  theme_classic()
+
+```
+The graduation rate has improved over time for all categories.
+
+## Problem 4: Scraping the Wild We(b)st
+
+Find a web page that contains at least one table and scrap it using `rvest`. Once you've pulled the data into R, 
+
+* write it to a csv so that you aren't pulling the data each time you knit the document.
+* load the dataset.
+* use the data to construct a graph or compute some summary statistics.  
+* State what conclusions can be drawn from the data.
+
+Notes:
+
+1. Don't try to scrap data that is on multiple pages.  
+2. On some websites, how the data are stored is very messy.  If you are struggling to determine the correct CSS, try a new page.
+3. [SelectorGadget](https://cran.r-project.org/web/packages/rvest/vignettes/selectorgadget.html) (a Chrome Add-on) can be a helpful tool for determining the CSS selector.
+
+```{r}
+ oil_scraping <- read_html("https://en.wikipedia.org/wiki/List_of_countries_by_oil_production") %>%
+  html_nodes("table")
+
+oil_scraping <- html_table(oil_scraping[[1]], fill = TRUE)
+
+#oil_scraping_table <- class(oil_scraping[[1]])
+  #html_table(oil_scraping[[1]], fill = TRUE)
+
+oil_csv <- write.csv(oil_scraping, "oil_scraping.csv")
+
+oil_csv1 <- read_csv("oil_scraping.csv")
+
+oil_csv2 <- oil_csv1 %>%
+  rename(
+    oilprod = `Oil production2019 (bbl/day)[1]`
+  )
+
+oil_csv %>%
+  ggplot(mapping = aes(x = reorder(Country x = Country, y = Oil_pr)) + 
+           geom_bar(stat = "identity") +
+           theme_bw() + 
+           labs(title = "Oil export by country", x = "Country", y = "") +
+           theme(axis.text.x = element_text(angle = 90)) 
+
+```
+
