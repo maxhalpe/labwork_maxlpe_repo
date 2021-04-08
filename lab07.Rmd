@@ -1,0 +1,441 @@
+---
+title: "Lab 7"
+author: "Maximilian Halperin"
+date: "Math 241, Week 10"
+output:
+  pdf_document: default
+  html_document: default
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+# Do not modify this chunk.
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Put all necessary libraries here
+library(tidyverse)
+library(reprex)
+library(dplyr)
+library(infer)
+library(moderndive)
+library("styler")
+library(lubridate)
+library(ggthemes)
+library(svglite)
+library(DT)
+library(shiny)
+library(tidycensus)
+library(ggmap)
+library(leaflet)
+library(tidycensus)
+library(gganimate)
+library(pdxTrees)
+library(rvest)
+library(httr)
+```
+
+
+
+## Due: Thursday, April 8th at 8:30am
+
+## Goals of this lab
+
+**Note: You should upload the final version to your Math 241 GitHub repo that I created for you, not Gradescope.**  We will grade this lab directly from your repo.
+
+
+## Goals of this lab
+
+* Practice creating static and interactive choropleth maps.
+* Practice creating static maps with `ggmap` and interactive maps with `leaflet`.
+* Practice incorporating interactivity into a graph with `gganimate`.
+
+
+### Problem 1: Mapping PDX Crashes
+
+For this problem we will return to the SE Portland 2018 car crash dataset.
+
+
+```{r}
+pdx_crash_2018 <- read_csv("/home/courses/math241s21/Data/pdx_crash_2018_page1.csv")
+```
+
+a. Grab the code from Lab 2, Problem 4.a to create a scatterplot of longitude and latitude (`LONGTD_DD`, `LAT_DD`).  Paste that code here to recreate that graph.  
+
+
+```{r}
+ggplot(data = pdx_crash_2018,  
+       mapping = aes(
+         x = LONGTD_DD, 
+         y = LAT_DD, 
+         color = "#4C4CFD")) +
+  geom_point(alpha = 0.3)
+
+```
+
+
+b. Now create a (static) raster map with the crashes mapped as points on top.
+
+```{r}
+box <- c(bottom = 45.45, left = -122.7, top = 45.54, right = -122.45) 
+            
+reed <- get_stamenmap(box, maptype = "toner", zoom = 12)
+
+reed %>%
+  ggmap() +
+  geom_point(aes(x = LONGTD_DD, y = LAT_DD), data = pdx_crash_2018,
+             color = "red", size = 3)
+
+
+```
+
+
+c.  Now create an interactive map of the crashes (but still only map the location of the crashes at this point).  
+
+```{r}
+#leaflet(options = leafletOptions(minZoom = 11, maxZoom = 13.5)) %>%
+leaflet() %>%
+  setView(lng = -122.58, lat = 45.495, zoom = 11) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~LONGTD_DD, lat = ~LAT_DD,
+                   data = pdx_crash_2018, radius = 1,
+                   opacity = 0.2)
+
+```
+
+
+
+d. Create a factor variable, `day_time` with categories:
+```{r, eval = TRUE}
+pdx_time <- pdx_crash_2018 %>%
+  filter(CRASH_HR_NO != 99) %>%
+  mutate(CRASH_HR_NO = as.numeric(CRASH_HR_NO),
+         day_time = case_when(CRASH_HR_NO > 5 & CRASH_HR_NO <= 12 ~ "Morning",
+                              CRASH_HR_NO > 12 & CRASH_HR_NO <= 16 ~ "Afternoon",
+                              CRASH_HR_NO > 16 & CRASH_HR_NO <= 20 ~ "Evening",
+                              CRASH_HR_NO > 20 & CRASH_HR_NO <= 23 ~ "Night",
+                              CRASH_HR_NO <= 5 ~ "Night"),
+         day_time = as.factor(day_time),
+         CRASH_TIME = fct_relevel(day_time, "Night", "Evening", "Afternoon", "Morning")
+         )
+
+factpal <- colorFactor("PuOr", pdx_time$day_time)
+
+pdx_time %>%
+  leaflet() %>%
+  setView(lng = -122.58, lat = 45.495, zoom = 11) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~LONGTD_DD, lat = ~LAT_DD,
+                   data = pdx_time,
+                   color = ~factpal(day_time),
+                   stroke = FALSE, fillOpacity = 0.5,
+                   radius = 3.5) %>%
+  addLegend("bottomright", pal = factpal, 
+            values = ~day_time, title = "Crash",
+            opacity = 1)
+```
+
+* morning: crashes between 5am and noon
+* afternoon: crashes after noon but before or at 4pm
+* evening: crashes after 4pm but before or at 8pm
+* night: crashes after 8pm but before or at 5am
+
+Add this variable to your interactive map using color.  Make sure to include a legend and be mindful of your color palette choice.  How do crash locations vary by parts of the day?
+
+
+e. Now add a pop-up to you interactive map that provides additional information (beyond part of the day) about the crash.  
+
+```{r}
+pdx_crash_2018 <- pdx_crash_2018 %>%
+  mutate(CRASH_DT = str_remove(CRASH_DT, "00:00:00"))
+
+date_crash <- paste("Date of Crash:", pdx_crash_2018$CRASH_DT)
+
+pdx_time %>%
+  leaflet() %>%
+  setView(lng = -122.55, lat = 45.5, zoom = 12) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~LONGTD_DD, lat = ~LAT_DD,
+             data = pdx_time, color = ~factor(day_time),
+             stroke = FALSE, fillOpacity = 0.5,
+             radius = 3.5, popup = date_crash)
+
+```
+
+
+
+
+f.  Create a leaflet graph where the user can toggle between displaying the different crash severities.  Draw some conclusions about differences in location for the severity types. 
+
+```{r}
+
+sev1 <- pdx_crash_2018 %>%
+  mutate(severity = case_when(
+    CRASH_SVRTY_CD == 2 ~ "fatal")) %>%
+      filter(severity == "fatal")
+
+sev2 <- pdx_crash_2018 %>%
+  mutate(severity = case_when(
+    CRASH_SVRTY_CD == 4 ~ "injury")) %>%
+      filter(severity == "injury")
+
+sev3 <- pdx_crash_2018 %>%
+  mutate(severity = case_when(
+    CRASH_SVRTY_CD == 5 ~ "property damage")) %>%
+      filter(severity == "property damage")
+  
+leaflet() %>%
+  setView(lng = -122.55, lat = 45.5, zoom = 12) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~LONGTD_DD, lat = ~LAT_DD,
+             data = sev1, color = "red",
+             stroke = FALSE, fillOpacity = 0.5,
+             radius = 3.5, popup = date_crash, group = "fatal") %>%
+  addCircleMarkers(lng = ~LONGTD_DD, lat = ~LAT_DD,
+             data = sev2, color = "blue",
+             stroke = FALSE, fillOpacity = 0.5,
+             radius = 3.5, popup = date_crash, group = "injury") %>%
+  addCircleMarkers(lng = ~LONGTD_DD, lat = ~LAT_DD,
+             data = sev3, color = "green",
+             stroke = FALSE, fillOpacity = 0.5,
+             radius = 3.5, popup = date_crash, group = "property damage") %>%
+  addLayersControl(overlayGroups = c("fatal", "injury","property damage"))
+
+```
+g.  Let's go back to the static map and this time change our `geom`.  Use `geom_density2d()` instead of `geom_point()`.  Interpret what this map tells us about car crashes in the SE and compare the story to the map using `geom_point()`.
+
+```{r}
+
+box <- c(bottom = 45.45, left = -122.7, top = 45.54, right = -122.45) 
+            
+reed <- get_stamenmap(box, maptype = "toner", zoom = 12)
+
+reed %>%
+  ggmap() +
+  geom_density2d(aes(x = LONGTD_DD, y = LAT_DD), data = pdx_crash_2018,
+             color = "red")
+
+
+```
+
+
+h.  Facet the plot in g. by `day_time`.  Does the distribution on accidents seem to vary much by part of day?
+
+```{r}
+reed %>%
+  ggmap() +
+  geom_density2d(data = pdx_time, aes(x = LONGTD_DD, y = LAT_DD), 
+                 inherit.aes =  FALSE,
+             color = "red") + 
+  facet_grid(day_time ~ .) +
+  theme_minimal()
+
+
+```
+
+
+### Problem 2: Choropleth Maps
+
+For this problem, I want you to practice creating choropleth maps.  Let's grab some data using `tidycensus`.  Remember that you will have to set up an [API key](https://api.census.gov/data/key_signup.html).
+
+
+
+```{r, eval = TRUE}
+api_key <- "6413ba5315708be54be79c9d03ead7b0a4b29d3a"
+library(tidycensus)
+```
+
+
+a. Let's grab data on the median gross rent (`B25064_001`) from the American Community Survey for Multnomah county, Oregon.  I want you to do data pulls at three geography resolutions: `county subdivision`, `tract`, and `block group`.
+
+```{r}
+rent_county <- get_acs(geography = "county subdivision", 
+                       variables = "B25064_001", 
+                       county = "multnomah", 
+                       state = "Oregon", 
+                       geometry = TRUE, 
+                       key = api_key, 
+                       cache_table = TRUE)
+
+tract_county <- get_acs(geography = "tract", 
+                        variables = "B25064_001",
+                        county = "multnomah", 
+                        state = "Oregon", 
+                        geometry = TRUE, 
+                        key = api_key, 
+                        cache_table = TRUE)
+
+block_county <- get_acs(geography = "block group", 
+                        variables = "B25064_001", 
+                        county = "multnomah", 
+                        state = "Oregon", 
+                        geometry = TRUE, 
+                        key = api_key, 
+                        cache_table = TRUE)
+```
+
+
+b. Create three choropleth maps of gross rent, one for each geography resolution.  What information can we glean from these maps?  Also, which resolution seems most useful for this variable?  Justify your answer.
+
+```{r}
+
+ggplot(data = rent_county,  mapping = aes(geometry = geometry, fill = estimate)) +
+  geom_sf() +
+  coord_sf() +
+  scale_fill_viridis_c(direction = -1) +
+  theme_void()
+
+ggplot(data = tract_county,  mapping = aes(geometry = geometry, fill = estimate)) +
+  geom_sf() +
+  coord_sf() +
+  scale_fill_viridis_c(direction = -1) +
+  theme_void()
+
+ggplot(data = block_county,  mapping = aes(geometry = geometry, fill = estimate)) +
+  geom_sf() +
+  coord_sf() +
+  scale_fill_viridis_c(direction = -1) +
+  theme_void()
+```
+
+
+
+
+c. Make one of your maps interactive.  
+
+
+```{r}
+
+pal4 <- colorFactor(palette = "viridis", domain = rent_county$estimate)
+
+rent_county %>%
+  sf::st_transform(crs = "+init=epsg:4326") %>%
+  leaflet() %>%
+  addTiles() %>%
+  addPolygons(popup = ~estimate, fillColor = ~pal4(estimate),
+              stroke = FALSE, fillOpacity = 0.9) %>%
+  addLegend("bottomright", pal = pal4, 
+            values = ~estimate, title = "Median Income",
+            opacity = 1)
+
+```
+
+
+
+### Problem 3: Take a Static Plot and Animate It!
+
+Let's take a static plot we made earlier in the semester and add some animation. 
+
+a. Go through your previous labs or mini-projects and find a plot you think might be better with animation.  Grab the code and recreate the graph here.
+
+.
+```{r}
+
+grad_rate <- "https://www.reed.edu/ir/gradrateshist.html"
+
+rate_table <- grad_rate %>%
+  read_html() %>%
+  html_nodes(css = "table")
+
+grad_rate_table <- html_table(rate_table[[1]], fill = TRUE)
+
+colnames(grad_rate_table) <- c("Year", "Cohort_size", "gradfour", "gradfive", "gradsix")
+
+grad_rate_table <- grad_rate_table %>%
+  slice(-1)
+
+gradratetable <- grad_rate_table %>%
+  mutate(Grad_year = as.numeric(Year),
+         cohort = parse_number(Cohort_size),
+         four = parse_number(gradfour),
+         five = parse_number(gradfive),
+         six = parse_number(gradsix)
+         ) %>%
+  dplyr::select(Grad_year, cohort, four, five, six)
+
+grad_rate_table_final <- pivot_longer(gradratetable, cols = c(four, five, six),
+                                names_to = "Years to Graduate", 
+                                values_to = "Graduation Rate") %>%
+  select(Grad_year, cohort, `Years to Graduate`, `Graduation Rate`) 
+
+static <- ggplot(grad_rate_table_final, aes(fill = `Years to Graduate`, y = `Graduation Rate`, x = Grad_year)) + 
+  geom_bar(stat = "identity") + 
+  facet_grid(. ~ `Years to Graduate`) +
+  theme_bw() +
+  labs(x = "Graduation Year")
+
+
+```
+
+b. Now add animation.
+
+```{r}
+animation <- static + 
+  transition_manual(Grad_year, cumulative = TRUE)
+  #transition_reveal(along = Grad_year)
+
+animate(animation, fps = 10, end_pause = 20)
+```
+
+
+c. In what ways did the animation improve the plot?  In what ways did the animation worsen the plot?
+
+
+
+### Problem 4: Your Turn!
+
+
+
+a. Using the `pdxTrees` dataset, create two `leaflet` maps.  I want you to get creative and really dig into the functionalities of `leaflet`.  Consider
+
+* Focusing on a specific park or set of parks.
+* Potentially using special icons.
+* Including labels and/or pop-ups.
+* The best tiling for your purpose.
+* Zoom or view constraints
+
+```{r}
+parks <- get_pdxTrees_parks()
+
+parks <- parks %>%
+  filter(Common_Name == c("Douglas-Fir", "Bigleaf Maple", "American Sycamore", "American Elm", "Austrian Black Pine"))
+
+pal3 <- colorFactor(palette = "viridis", domain = parks$Common_Name)
+
+parks %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~ Longitude, lat = ~Latitude,
+                    data = parks,
+                    stroke = FALSE,
+                    fillOpacity = 0.6,
+                    color = ~pal3(Common_Name)) %>%
+                      addLegend("bottomright", pal = pal3,
+                                values = ~Common_Name, title = "Tree",
+                                opacity = 1) %>%
+                      setView(lng = -122.629383, lat = 45.481245, zoom = 11)
+
+```
+
+
+State the key takeaways that we can learn from your maps.
+
+b. Now using the `pdxTrees` dataset, create an animated graph.  Again, think carefully about the various animation features.  In particular, consider
+
+* How you want to transition from frame to frame.
+* How the data should enter and exit the plot.
+* The speeds of various aspects of the animation.
+* Adding frame information to the title and/or subtitle.
+* Whether or not the view should change as the animation progresses.
+```{r}
+something <- ggplot(data = parks, mapping = aes(x = Longitude, y = Latitude, color = DBH)) +
+  geom_point() + 
+  transition_manual(Inventory_Date, cumulative = TRUE)
+
+animate(something, fps = 5, end_pause = 20)
+
+
+```
+
+State the key takeaways that we can learn from your animated graph.  Also address whether or not you think the animation helps or hinders the delivery of these key takeaways.
